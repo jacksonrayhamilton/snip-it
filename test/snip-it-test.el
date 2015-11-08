@@ -33,7 +33,7 @@
   "Define a test with NAME, executing BODY."
   (declare (indent defun))
   `(ert-deftest ,(intern (format "snip-it-%s" name)) ()
-     (let ((snip-it-directories (format "%s/snippets" snip-it-test-path)))
+     (let ((snip-it-directories `(,(format "%s/snippets" snip-it-test-path))))
        (with-temp-buffer
          (progn
            ,@body)))))

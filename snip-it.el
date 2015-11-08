@@ -75,9 +75,12 @@
               (let ((mode-directory (format "%s/%s" directory mode)))
                 (when (file-directory-p mode-directory)
                   (throw 'directory mode-directory))))
-            snip-it-directories)))
+            snip-it-directories)
+           ;; Return nil if the search fails.
+           nil))
         (name-regexp (snip-it-exact-regexp name)))
-    (when (snip-it-find-in-directory mode-directory name-regexp)
+    (when (and mode-directory
+               (snip-it-find-in-directory mode-directory name-regexp))
       (snip-it-read-file (format "%s/%s" mode-directory name)))))
 
 (defun snip-it-interpolate (pieces values)
