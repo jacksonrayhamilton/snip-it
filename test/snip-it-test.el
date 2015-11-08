@@ -23,6 +23,7 @@
 
 ;;; Code:
 
+(require 'ert)
 (require 'snip-it)
 
 (defconst snip-it-test-path
@@ -38,13 +39,29 @@
          (progn
            ,@body)))))
 
-(snip-it-test-deftest mirroring-and-multiple-values ()
-  (insert "add")
+(defun snip-it-test-insert (string)
+  "Insert and submit STRING."
+  (insert string)
+  (snip-it-expand-next))
+
+(defun snip-it-test-buffer (expected)
+  "Assert that the current buffer looks like EXPECTED."
+  (should (equal (buffer-string) expected)))
+
+(snip-it-test-deftest locate-snippet ()
+  (insert "hello")
   (snip-it-expand)
-  (insert "a")
-  (snip-it-expand-next)
-  (insert "1")
-  (snip-it-expand-next)
-  (should (equal (buffer-string) "(setq a (+ a 1))")))
+  (snip-it-test-insert "Hello")
+  (snip-it-test-buffer "Hello, world!"))
+
+(defun snip-it-test-expand (string)
+  "Expand snippet defined by STRING."
+  (snip-it-expand-template (snip-it-make-template string)))
+
+(snip-it-test-deftest mirroring-and-multiple-values ()
+  (snip-it-test-expand "(setq $1 (+ $1 $2))")
+  (snip-it-test-insert "a")
+  (snip-it-test-insert "1")
+  (snip-it-test-buffer "(setq a (+ a 1))"))
 
 ;;; snip-it-test.el ends here
