@@ -7,7 +7,7 @@ Expand snippets.
 Bind `snip-it-expand` to a key of your choice:
 
 ```elisp
-(global-set-key (kbd "<C-tab>" #'snip-it-expand))
+(global-set-key (kbd "<C-tab>") #'snip-it-expand)
 ```
 
 Save snippets to a directory with the name of a major mode.  Snippets' names are

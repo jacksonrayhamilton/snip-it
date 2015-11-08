@@ -27,7 +27,7 @@
 
 ;; Bind `snip-it-expand' to a key of your choice:
 ;;
-;;  (global-set-key (kbd "<C-tab>" #'snip-it-expand))
+;;  (global-set-key (kbd "<C-tab>") #'snip-it-expand)
 ;;
 ;; Save snippets to a directory with the name of a major mode.  Snippets' names
 ;; are determined by their filenames.  For instance, an "add" snippet for Emacs
