@@ -93,6 +93,7 @@
       (setq string
             (concat string
                     (cond
+                     ((eq piece 'v0) "")
                      ((symbolp piece)
                       (setq n (string-to-number
                                (substring (symbol-name piece) 1)))
@@ -137,6 +138,7 @@
   (let* ((pieces '())
          (index 0)
          (start 0)
+         (exit-p nil)
          char-string char
          var (varlist '())
          parse-var
@@ -160,8 +162,8 @@
               (intern var))))
     (setq append-remaining
           (lambda ()
-            (when (> index start)
-              (setq pieces (append pieces `(,(substring string start index)))))))
+            (let ((remaining (substring string start (min index (length string)))))
+              (setq pieces (append pieces (list remaining))))))
     (while (< index (length string))
       (setq char-string (substring string index (1+ index)))
       (setq char (string-to-char char-string))
@@ -170,15 +172,19 @@
         (funcall append-remaining)
         (setq index (1+ index))
         (setq var (funcall parse-var))
-        (when (not (member var varlist))
-          (setq varlist (append varlist `(,var))))
-        (setq pieces (append pieces `(,var)))
+        (cond
+         ((eq var 'v0)
+          (setq exit-p t))
+         ((not (member var varlist))
+          (setq varlist (append varlist (list var)))))
+        (setq pieces (append pieces (list var)))
         (setq start index))
        ((= char 92) ; \
         (setq index (1+ index))))
       (setq index (1+ index)))
     (funcall append-remaining)
-    `((arity . ,(length varlist))
+    `((exit-p . ,exit-p)
+      (arity . ,(length varlist))
       (function . ,(snip-it-make-template-function pieces)))))
 
 (defun snip-it-constant (value)
@@ -189,7 +195,7 @@
   "For N times, call FN, accumulating the results."
   (let ((index 0) (results '()))
     (while (< index n)
-      (setq results (append results `(,(funcall fn index))))
+      (setq results (append results (list (funcall fn index))))
       (setq index (1+ index)))
     results))
 
@@ -221,7 +227,8 @@
 
 (defun snip-it-expand-template (template)
   "Expand TEMPLATE."
-  (let* ((arity (cdr (assq 'arity template)))
+  (let* ((exit-p (cdr (assq 'exit-p template)))
+         (arity (cdr (assq 'arity template)))
          (function (cdr (assq 'function template)))
          (var-values (snip-it-times arity (snip-it-constant "")))
          (start-pos (point))
@@ -247,6 +254,9 @@
                 (funcall surround))
               (goto-char (+ start-pos (length (nth 0 pieces)))))
              (t
+              (when exit-p
+                (setq pieces (funcall function 0 var-values))
+                (goto-char (+ start-pos (length (nth 0 pieces)))))
               (funcall exit)))))
     (setq surround
           (lambda ()

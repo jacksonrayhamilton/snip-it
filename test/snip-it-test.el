@@ -64,4 +64,10 @@
   (snip-it-test-insert "1")
   (snip-it-test-buffer "(setq a (+ a 1))"))
 
+(snip-it-test-deftest exit-position ()
+  (snip-it-test-expand "$1, world.$0")
+  (snip-it-test-insert "Goodbye")
+  (snip-it-test-buffer "Goodbye, world.")
+  (should (equal (point) (point-max))))
+
 ;;; snip-it-test.el ends here
