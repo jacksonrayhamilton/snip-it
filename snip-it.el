@@ -84,20 +84,17 @@
       (snip-it-read-file (format "%s/%s" mode-directory name)))))
 
 (defun snip-it-interpolate (pieces values)
-  "Replace variable symbols in PIECES with VALUES."
-  (let ((string "")
-        piece n)
+  "Replace variables in PIECES with VALUES."
+  (let ((string "") piece)
     (while pieces
       (setq piece (car pieces))
       (setq pieces (cdr pieces))
-      (setq string
-            (concat string
+      (setq string (concat
+                    string
                     (cond
-                     ((eq piece 'v0) "")
-                     ((symbolp piece)
-                      (setq n (string-to-number
-                               (substring (symbol-name piece) 1)))
-                      (nth (1- n) values))
+                     ((eq piece 0) "")
+                     ((numberp piece)
+                      (nth (1- piece) values))
                      (piece)))))
     string))
 
@@ -114,12 +111,11 @@
   "Create function to concatentate PIECES around an index."
   (lambda (var-index var-values)
     (let ((search-pieces pieces)
-          (search-item (intern (format "v%s" var-index)))
           (search-index 0)
           found-index)
       (while search-pieces
         (cond
-         ((eq (car search-pieces) search-item)
+         ((eq (car search-pieces) var-index)
           (setq found-index search-index)
           (setq search-pieces nil))
          (t
@@ -145,10 +141,8 @@
          append-remaining)
     (setq parse-var
           (lambda ()
-            (let ((continue t)
-                  (var "v"))
-              (while (and (< index (length string))
-                          continue)
+            (let ((continue t) (var ""))
+              (while (and continue (< index (length string)))
                 (setq char-string (substring string index (1+ index)))
                 (setq char (string-to-char char-string))
                 (cond
@@ -156,10 +150,10 @@
                   (setq var (concat var char-string))
                   (setq index (1+ index)))
                  (t
-                  (when (< (length var) 2)
-                    (error "Missing var number at char %s" index))
                   (setq continue nil))))
-              (intern var))))
+              (when (< (length var) 1)
+                (error "Expected var number after \"$\" (e.g. \"$1\")"))
+              (string-to-number var))))
     (setq append-remaining
           (lambda ()
             (let ((remaining (substring string start (min index (length string)))))
@@ -173,7 +167,7 @@
         (setq index (1+ index))
         (setq var (funcall parse-var))
         (cond
-         ((eq var 'v0)
+         ((eq var 0)
           (setq exit-p t))
          ((not (member var varlist))
           (setq varlist (append varlist (list var)))))
