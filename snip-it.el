@@ -45,20 +45,12 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'thingatpt)
 
 (defcustom snip-it-directories '()
   "Directories to search for snippets."
   :group 'snip-it)
-
-(defun snip-it-exact-regexp (word)
-  "Create a regexp matching exactly WORD."
-  (concat "\\`" (regexp-quote word) "\\'"))
-
-(defun snip-it-find-in-directory (directory match)
-  "Return file from DIRECTORY matching regexp MATCH."
-  (let ((files (directory-files directory nil match)))
-    (when files (car files))))
 
 (defun snip-it-read-file (path)
   "Read contents from file at PATH."
@@ -68,130 +60,91 @@
 
 (defun snip-it-find-snippet (name mode)
   "Find snippet named NAME for MODE."
-  (let ((mode-directory
-         (catch 'directory
-           (mapc
-            (lambda (directory)
-              (let ((mode-directory (format "%s/%s" directory mode)))
-                (when (file-directory-p mode-directory)
-                  (throw 'directory mode-directory))))
-            snip-it-directories)
-           ;; Return nil if the search fails.
-           nil))
-        (name-regexp (snip-it-exact-regexp name)))
-    (when (and mode-directory
-               (snip-it-find-in-directory mode-directory name-regexp))
-      (snip-it-read-file (format "%s/%s" mode-directory name)))))
+  (let (snippet)
+    (cl-some
+     (lambda (directory)
+       (let ((filename (format "%s/%s/%s" directory mode name)))
+         (and (file-readable-p filename)
+              (setq snippet filename))))
+     snip-it-directories)
+    (when snippet
+      (snip-it-read-file snippet))))
 
 (defun snip-it-interpolate (pieces values)
   "Replace variables in PIECES with VALUES."
-  (let ((string "") piece)
-    (while pieces
-      (setq piece (car pieces))
-      (setq pieces (cdr pieces))
-      (setq string (concat
-                    string
-                    (cond
+  (cl-reduce
+   (lambda (string piece)
+     (concat string (cond
                      ((eq piece 0) "")
                      ((numberp piece)
                       (nth (1- piece) values))
-                     (piece)))))
-    string))
-
-(defun snip-it-slice (seq start &optional end)
-  "Return copy of SEQ from START to END."
-  (cond ((eq start end) '())
-        (t
-         (let ((slice (copy-sequence (nthcdr start seq))))
-           (when end
-             (setcdr (nthcdr (- end start 1) slice) nil))
-           slice))))
+                     (piece))))
+   pieces
+   :initial-value ""))
 
 (defun snip-it-make-template-function (pieces)
   "Create function to concatentate PIECES around an index."
-  (lambda (var-index var-values)
-    (let ((search-pieces pieces)
-          (search-index 0)
-          found-index)
-      (while search-pieces
-        (cond
-         ((eq (car search-pieces) var-index)
-          (setq found-index search-index)
-          (setq search-pieces nil))
-         (t
-          (setq search-pieces (cdr search-pieces))))
-        (setq search-index (1+ search-index)))
+  (lambda (pivot-var var-values)
+    (let ((pivot-index (cl-position pivot-var pieces)))
       (list
        (snip-it-interpolate
-        (snip-it-slice pieces 0 found-index)
+        (cl-subseq pieces 0 pivot-index)
         var-values)
        (snip-it-interpolate
-        (snip-it-slice pieces (1+ found-index))
+        (cl-subseq pieces (1+ pivot-index))
         var-values)))))
+
+(cl-defstruct snip-it-template
+  exit-p
+  arity
+  function)
 
 (defun snip-it-make-template (string)
   "Create expandable template from snippet STRING."
   (let* ((pieces '())
+         (varlist '())
          (index 0)
          (start 0)
          (exit-p nil)
-         char-string char
-         var (varlist '())
-         parse-var
-         append-remaining)
-    (setq parse-var
-          (lambda ()
-            (let ((continue t) (var ""))
-              (while (and continue (< index (length string)))
-                (setq char-string (substring string index (1+ index)))
-                (setq char (string-to-char char-string))
-                (cond
-                 ((and (>= char 48) (<= char 57))
-                  (setq var (concat var char-string))
-                  (setq index (1+ index)))
-                 (t
-                  (setq continue nil))))
-              (when (< (length var) 1)
-                (error "Expected var number after \"$\" (e.g. \"$1\")"))
-              (string-to-number var))))
+         char append-remaining parse-var)
     (setq append-remaining
           (lambda ()
-            (let ((remaining (substring string start (min index (length string)))))
+            (let* ((end (min index (length string)))
+                   (remaining (substring string start end)))
               (setq pieces (append pieces (list remaining))))))
+    (setq parse-var
+          (lambda ()
+            (let (var)
+              (funcall append-remaining)
+              (cl-incf index)
+              (cond
+               ((string-match "[[:digit:]]+" string index)
+                (setq var (match-string 0 string))
+                (cl-incf index (length var))
+                (setq var (string-to-number var)))
+               (t
+                (error "Expected var number after \"$\" (e.g. \"$1\")")))
+              (cond
+               ((eq var 0)
+                (setq exit-p t))
+               ((not (member var varlist))
+                (setq varlist (append varlist (list var)))))
+              (setq pieces (append pieces (list var)))
+              (setq start index))))
     (while (< index (length string))
-      (setq char-string (substring string index (1+ index)))
-      (setq char (string-to-char char-string))
+      (setq char (string-to-char (substring string index (1+ index))))
       (cond
        ((= char 36) ; $
-        (funcall append-remaining)
-        (setq index (1+ index))
-        (setq var (funcall parse-var))
-        (cond
-         ((eq var 0)
-          (setq exit-p t))
-         ((not (member var varlist))
-          (setq varlist (append varlist (list var)))))
-        (setq pieces (append pieces (list var)))
-        (setq start index))
+        (funcall parse-var))
        ((= char 92) ; \
-        (setq index (1+ index))))
-      (setq index (1+ index)))
+        ;; Skip an escape character.
+        (cl-incf index)))
+      (cl-incf index))
     (funcall append-remaining)
-    `((exit-p . ,exit-p)
-      (arity . ,(length varlist))
-      (function . ,(snip-it-make-template-function pieces)))))
-
-(defun snip-it-constant (value)
-  "Return a function that always returns VALUE."
-  (lambda (&rest _unused) value))
-
-(defun snip-it-times (n fn)
-  "For N times, call FN, accumulating the results."
-  (let ((index 0) (results '()))
-    (while (< index n)
-      (setq results (append results (list (funcall fn index))))
-      (setq index (1+ index)))
-    results))
+    (make-snip-it-template
+     :exit-p exit-p
+     :arity (length varlist)
+     :function (snip-it-make-template-function pieces))))
 
 (defvar-local snip-it-expand-next-function nil
   "Per-expansion progression handler.")
@@ -221,31 +174,28 @@
 
 (defun snip-it-expand-template (template)
   "Expand TEMPLATE."
-  (let* ((exit-p (cdr (assq 'exit-p template)))
-         (arity (cdr (assq 'arity template)))
-         (function (cdr (assq 'function template)))
-         (var-values (snip-it-times arity (snip-it-constant "")))
+  (let* ((exit-p (snip-it-template-exit-p template))
+         (arity (snip-it-template-arity template))
+         (function (snip-it-template-function template))
+         (var-values (make-list arity ""))
          (start-pos (point))
          (index -1)
-         pieces
-         value-length
-         set-pieces
-         next
-         surround
-         update
-         exit)
+         pieces value-length
+         set-pieces next surround update exit)
     (setq set-pieces
           (lambda ()
             (setq pieces (funcall function (1+ index) var-values))))
     (setq next
           (lambda ()
-            (setq index (1+ index))
+            (cl-incf index)
             (cond
              ((< index arity)
               (setq value-length 0)
-              (funcall set-pieces)
-              (when (= index 0)
+              (cond
+               ((= index 0)
                 (funcall surround))
+               (t
+                (funcall set-pieces)))
               (goto-char (+ start-pos (length (nth 0 pieces)))))
              (t
               (when exit-p
